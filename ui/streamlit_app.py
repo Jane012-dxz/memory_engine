@@ -147,14 +147,12 @@ with st.sidebar:
                 deleted_count = 0
                 
                 with _connect(db_path) as conn:
-                    # 1. 删除关系记忆（relation_memory）中包含主题词的记录
                     cursor_rel = conn.execute(
                         "DELETE FROM relation_memory WHERE user_id = ? AND (source_entity LIKE ? OR target_entity LIKE ?)",
                         (st.session_state.user_id, f"%{topic}%", f"%{topic}%")
                     )
                     deleted_count += cursor_rel.rowcount
                     
-                    # 2. 删除显式记忆（explicit_memory）中包含主题词的记录
                     cursor_exp = conn.execute(
                         "DELETE FROM explicit_memory WHERE user_id = ? AND content LIKE ?",
                         (st.session_state.user_id, f"%{topic}%")
@@ -179,11 +177,18 @@ with st.sidebar:
         st.metric("关系记忆总数", total_relations)
 
         st.divider()
-        st.subheader("📈 运营数据汇总")
-
-        # 密码验证
-        admin_password = st.text_input("请输入管理员密码查看运营数据", type="password", key="admin_pwd")
+        
+        # ========== 管理员功能（需要密码） ==========
+        st.subheader("🔐 管理员功能")
+        admin_password = st.text_input("请输入管理员密码", type="password", key="admin_pwd_all")
+        
         if admin_password == "admin123":
+            st.success("✅ 密码正确，已解锁管理员功能")
+            
+            # ---------- 运营数据汇总 ----------
+            st.divider()
+            st.subheader("📈 运营数据汇总")
+
             if st.button("📊 刷新汇总数据"):
                 from database.db import _connect, _get_db_path
                 db_path = _get_db_path("storage/memory.db")
@@ -213,42 +218,45 @@ with st.sidebar:
                             st.caption(f"   💬 用户说: {row['evidence']}")
                 else:
                     st.info("暂无关系记录")
+
+            # ---------- 用户聊天记录 ----------
+            st.divider()
+            st.subheader("📋 用户聊天记录")
+
+            if st.button("📋 查看所有用户聊天记录"):
+                history = get_all_chat_history(limit=200)
+                if history:
+                    st.caption(f"共 {len(history)} 条记录（最多显示200条）")
+                    for record in history:
+                        role_icon = "🧑" if record['role'] == 'user' else "🤖"
+                        st.text(f"{role_icon} [{record['user_id'][:8]}] {record['role']}: {record['content']}")
+                        st.caption(f"  情绪: {record.get('emotion', '')} | {record.get('created_at', '')}")
+                        st.divider()
+                else:
+                    st.info("暂无聊天记录")
+
+            # ---------- 数据导出 ----------
+            st.divider()
+            st.subheader("📥 数据导出")
+
+            if st.button("📥 导出数据库文件"):
+                db_path = "storage/memory.db"
+                try:
+                    with open(db_path, "rb") as f:
+                        db_bytes = f.read()
+                    st.download_button(
+                        label="⬇️ 点击下载 memory.db",
+                        data=db_bytes,
+                        file_name="memory.db",
+                        mime="application/octet-stream"
+                    )
+                except FileNotFoundError:
+                    st.error("❌ 数据库文件不存在，请先产生一些数据")
+        
         elif admin_password:
             st.error("❌ 密码错误，请重试")
         else:
-            st.info("🔒 请输入管理员密码查看运营数据汇总")
-
-        st.divider()
-        st.subheader("📋 用户聊天记录")
-
-        if st.button("📋 查看所有用户聊天记录"):
-            history = get_all_chat_history(limit=200)
-            if history:
-                st.caption(f"共 {len(history)} 条记录（最多显示200条）")
-                for record in history:
-                    role_icon = "🧑" if record['role'] == 'user' else "🤖"
-                    st.text(f"{role_icon} [{record['user_id'][:8]}] {record['role']}: {record['content']}")
-                    st.caption(f"  情绪: {record.get('emotion', '')} | {record.get('created_at', '')}")
-                    st.divider()
-            else:
-                st.info("暂无聊天记录")
-
-        st.divider()
-        st.subheader("📥 数据导出")
-
-        if st.button("📥 导出数据库文件"):
-            db_path = "storage/memory.db"
-            try:
-                with open(db_path, "rb") as f:
-                    db_bytes = f.read()
-                st.download_button(
-                    label="⬇️ 点击下载 memory.db",
-                    data=db_bytes,
-                    file_name="memory.db",
-                    mime="application/octet-stream"
-                )
-            except FileNotFoundError:
-                st.error("❌ 数据库文件不存在，请先产生一些数据")
+            st.info("🔒 请输入管理员密码查看运营数据、聊天记录和导出数据")
 
 
 # ============ 主体：对话区 ============
