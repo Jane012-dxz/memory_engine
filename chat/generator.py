@@ -126,6 +126,14 @@ def generate_response(
     help_keywords = ['怎么办', '怎么', '如何', '给建议', '建议', '帮我', '帮我一下', '具体方法', '有什么办法', '怎么做', '怎么解决']
     is_help_request = any(kw in user_input for kw in help_keywords)
 
+    # ========== 检测危机信号 ==========
+    crisis_keywords = ['自杀', '自伤', '轻生', '不想活了', '活着没意思', '想死', '结束生命', '不想活']
+    is_crisis = any(kw in user_input for kw in crisis_keywords)
+
+    if is_crisis:
+        # 危机模式：最高优先级，不执行任何其他逻辑
+        return _crisis_response(user_input, user_id, emotion, db_path)
+
     if is_help_request:
         help_instruction = """【重要】用户正在明确求助，要求具体建议。请在简短共情后，直接给出 2-3 条具体可操作的建议。
 不要再问“是什么让你焦虑”“你现在的感受是怎样的”这类问题。"""
@@ -191,6 +199,21 @@ def generate_response(
         # 降级回复也要记录
         add_chat_history(user_id, 'assistant', fallback, emotion, db_path=db_path)
         return fallback
+
+
+def _crisis_response(user_input: str, user_id: str, emotion: str, db_path: Optional[str] = None) -> str:
+    """危机信号专用回应：不调用 API，直接返回安全引导"""
+    reply = """我听到了你的痛苦，这一定非常难熬。请你不要一个人扛着。
+
+**请立即拨打全国心理援助热线：12356**，有人会倾听你、帮助你。
+
+如果你愿意，也请告诉身边信任的人，或者去最近的医院心理科/精神科。
+
+你不是一个人，请一定要联系专业人士寻求帮助。"""
+    
+    # 记录危机回应到聊天历史
+    add_chat_history(user_id, 'assistant', reply, emotion, db_path=db_path)
+    return reply
 
 
 def _fallback_response(emotion: str, user_input: str) -> str:
