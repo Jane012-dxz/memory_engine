@@ -233,6 +233,23 @@ with st.sidebar:
             else:
                 st.info("暂无聊天记录")
 
+        st.divider()
+        st.subheader("📥 数据导出")
+
+        if st.button("📥 导出数据库文件"):
+            db_path = "storage/memory.db"
+            try:
+                with open(db_path, "rb") as f:
+                    db_bytes = f.read()
+                st.download_button(
+                    label="⬇️ 点击下载 memory.db",
+                    data=db_bytes,
+                    file_name="memory.db",
+                    mime="application/octet-stream"
+                )
+            except FileNotFoundError:
+                st.error("❌ 数据库文件不存在，请先产生一些数据")
+
 
 # ============ 主体：对话区 ============
 st.title("💬 对话")
