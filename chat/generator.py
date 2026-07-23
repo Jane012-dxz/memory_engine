@@ -27,6 +27,8 @@ def generate_response(
     """
     生成情绪陪伴回应（整合所有模块）
     """
+    print(f"[DEBUG] generate_response 收到的 user_id: {user_id}")
+
     # 1. 识别情绪
     emotion = detect_emotion(user_input)
 
