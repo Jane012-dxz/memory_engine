@@ -1,18 +1,22 @@
 """Supabase database layer for memory_engine."""
 
 import streamlit as st
-from st_supabase_connection import SupabaseConnection
+from supabase import create_client, Client
 from datetime import datetime
 from typing import Any, Optional
 
 
+def get_conn() -> Client:
+    """获取 Supabase 客户端"""
+    if "supabase" not in st.session_state:
+        url = st.secrets["connections"]["supabase"]["url"]
+        key = st.secrets["connections"]["supabase"]["key"]
+        st.session_state.supabase = create_client(url, key)
+    return st.session_state.supabase
+
+
 def _now_iso() -> str:
     return datetime.now().isoformat()
-
-
-def get_conn():
-    """获取 Supabase 连接"""
-    return st.connection("supabase", type=SupabaseConnection)
 
 
 # ============ 初始化 ============
