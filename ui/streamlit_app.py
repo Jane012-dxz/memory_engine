@@ -11,15 +11,16 @@ import uuid
 import pandas as pd
 from datetime import datetime
 
-from database.db import (
+from database.db_supabase import (
     get_all_memories,
     delete_memory,
     update_relation,
     get_relations_by_emotion,
     get_all_chat_history,
+    init_db,
 )
 from chat.generator import generate_response
-from database.db import init_db
+
 
 # 页面配置
 st.set_page_config(
@@ -142,24 +143,23 @@ with st.sidebar:
         topic = st.text_input("输入主题词批量遗忘（如：论文）")
         if st.button("🗑️ 删除该主题所有记忆", type="secondary"):
             if topic:
-                from database.db import _connect, _get_db_path
-                db_path = _get_db_path("storage/memory.db")
+                # Supabase 删除操作
+                from database.db_supabase import get_relations_by_emotion, get_all_memories
+                # 删除关系记忆
+                relations = get_relations_by_emotion(st.session_state.user_id, emotion=None, status=None)
                 deleted_count = 0
+                for rel in relations:
+                    if topic in rel.get('source_entity', '') or topic in rel.get('target_entity', ''):
+                        # 软删除：更新状态为 deleted
+                        update_relation(rel['id'], status='deleted')
+                        deleted_count += 1
                 
-                with _connect(db_path) as conn:
-                    cursor_rel = conn.execute(
-                        "DELETE FROM relation_memory WHERE user_id = ? AND (source_entity LIKE ? OR target_entity LIKE ?)",
-                        (st.session_state.user_id, f"%{topic}%", f"%{topic}%")
-                    )
-                    deleted_count += cursor_rel.rowcount
-                    
-                    cursor_exp = conn.execute(
-                        "DELETE FROM explicit_memory WHERE user_id = ? AND content LIKE ?",
-                        (st.session_state.user_id, f"%{topic}%")
-                    )
-                    deleted_count += cursor_exp.rowcount
-                    
-                    conn.commit()
+                # 删除显式记忆
+                memories = get_all_memories(st.session_state.user_id, active_only=False)
+                for mem in memories:
+                    if topic in mem.get('content', ''):
+                        delete_memory(mem['id'], hard=False)
+                        deleted_count += 1
                 
                 if deleted_count > 0:
                     st.success(f"✅ 已删除 {deleted_count} 条包含「{topic}」的记忆")
@@ -185,24 +185,16 @@ with st.sidebar:
         if admin_password == "admin123":
             st.success("✅ 密码正确，已解锁管理员功能")
             
-            # ---------- 运营数据汇总 ----------
+            # ---------- 运营数据汇总（从 Supabase 读取） ----------
             st.divider()
             st.subheader("📈 运营数据汇总")
 
             if st.button("📊 刷新汇总数据"):
-                from database.db import _connect, _get_db_path
-                db_path = _get_db_path("storage/memory.db")
-                with _connect(db_path) as conn:
-                    user_count = conn.execute(
-                        "SELECT COUNT(DISTINCT user_id) FROM relation_memory"
-                    ).fetchone()[0]
-                    total_relations_all = conn.execute(
-                        "SELECT COUNT(*) FROM relation_memory"
-                    ).fetchone()[0]
-                    recent_inputs = conn.execute(
-                        "SELECT user_id, source_entity, target_entity, emotion_context, evidence, last_updated "
-                        "FROM relation_memory ORDER BY last_updated DESC LIMIT 10"
-                    ).fetchall()
+                # 从 Supabase 获取所有用户的关系记录
+                all_relations = get_relations_by_emotion(user_id="", emotion=None, status=None)
+                user_count = len(set([r.get('user_id') for r in all_relations if r.get('user_id')]))
+                total_relations_all = len(all_relations)
+                recent_inputs = sorted(all_relations, key=lambda x: x.get('last_updated', ''), reverse=True)[:10]
 
                 st.metric("👥 总用户数", user_count)
                 st.metric("📝 总关系记录数", total_relations_all)
@@ -211,11 +203,11 @@ with st.sidebar:
                     st.caption("📋 最近10条关系记录")
                     for row in recent_inputs:
                         st.text(
-                            f"[{row['user_id'][:8]}] {row['source_entity']} → {row['target_entity']} "
-                            f"(情绪: {row['emotion_context']})"
+                            f"[{row.get('user_id', '')[:8]}] {row.get('source_entity', '')} → {row.get('target_entity', '')} "
+                            f"(情绪: {row.get('emotion_context', '')})"
                         )
-                        if row['evidence']:
-                            st.caption(f"   💬 用户说: {row['evidence']}")
+                        if row.get('evidence'):
+                            st.caption(f"   💬 用户说: {row.get('evidence', '')}")
                 else:
                     st.info("暂无关系记录")
 
@@ -240,18 +232,67 @@ with st.sidebar:
             st.subheader("📥 数据导出")
 
             if st.button("📥 导出数据库文件"):
-                db_path = "storage/memory.db"
+                # 从 Supabase 导出数据为 SQLite 文件
                 try:
-                    with open(db_path, "rb") as f:
+                    import sqlite3
+                    import json
+                    
+                    # 获取所有数据
+                    all_relations = get_relations_by_emotion(user_id="", emotion=None, status=None)
+                    all_chat = get_all_chat_history(limit=10000)
+                    
+                    # 创建临时 SQLite 数据库
+                    temp_db = "storage/export_temp.db"
+                    conn = sqlite3.connect(temp_db)
+                    cursor = conn.cursor()
+                    
+                    # 创建表
+                    cursor.execute('''CREATE TABLE IF NOT EXISTS relation_memory (
+                        id INTEGER PRIMARY KEY,
+                        user_id TEXT, source_entity TEXT, target_entity TEXT,
+                        relation_type TEXT, strength REAL, emotion_context TEXT,
+                        status TEXT, first_seen TEXT, last_updated TEXT,
+                        mention_count INTEGER, evidence TEXT
+                    )''')
+                    
+                    cursor.execute('''CREATE TABLE IF NOT EXISTS chat_history (
+                        id INTEGER PRIMARY KEY,
+                        user_id TEXT, role TEXT, content TEXT,
+                        emotion TEXT, created_at TEXT
+                    )''')
+                    
+                    # 插入数据
+                    for r in all_relations:
+                        cursor.execute('''INSERT OR REPLACE INTO relation_memory 
+                            (id, user_id, source_entity, target_entity, relation_type, strength, emotion_context, status, first_seen, last_updated, mention_count, evidence)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                            (r.get('id'), r.get('user_id'), r.get('source_entity'), r.get('target_entity'),
+                             r.get('relation_type'), r.get('strength'), r.get('emotion_context'),
+                             r.get('status'), r.get('first_seen'), r.get('last_updated'),
+                             r.get('mention_count'), r.get('evidence')))
+                    
+                    for c in all_chat:
+                        cursor.execute('''INSERT OR REPLACE INTO chat_history 
+                            (id, user_id, role, content, emotion, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?)''',
+                            (c.get('id'), c.get('user_id'), c.get('role'), c.get('content'),
+                             c.get('emotion'), c.get('created_at')))
+                    
+                    conn.commit()
+                    conn.close()
+                    
+                    with open(temp_db, "rb") as f:
                         db_bytes = f.read()
+                    
                     st.download_button(
                         label="⬇️ 点击下载 memory.db",
                         data=db_bytes,
-                        file_name="memory.db",
+                        file_name="memory_export.db",
                         mime="application/octet-stream"
                     )
-                except FileNotFoundError:
-                    st.error("❌ 数据库文件不存在，请先产生一些数据")
+                    st.success("✅ 数据导出成功！")
+                except Exception as e:
+                    st.error(f"❌ 导出失败: {e}")
         
         elif admin_password:
             st.error("❌ 密码错误，请重试")
