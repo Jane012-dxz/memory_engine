@@ -140,7 +140,7 @@ def add_relation_memory(
 
 
 def get_relations_by_emotion(
-    user_id: str,
+    user_id: str = "",
     emotion: str | None = None,
     status: str | None = "active",
     db_path=None,
@@ -148,14 +148,19 @@ def get_relations_by_emotion(
     """按情绪和状态查询关系记忆"""
     try:
         conn = get_conn()
-        query = conn.table("relation_memory").select("*").eq("user_id", user_id)
+        # 直接查询所有记录（不筛选 user_id）
+        query = conn.table("relation_memory").select("*")
+        
+        # 如果指定了 user_id 才筛选
+        if user_id:
+            query = query.eq("user_id", user_id)
         if emotion is not None:
             query = query.eq("emotion_context", emotion)
         if status is not None:
             query = query.eq("status", status)
         query = query.order("last_updated", desc=True)
         result = query.execute()
-        print(f"[DEBUG] 查询关系记忆成功: {len(result.data)} 条")
+        print(f"[DEBUG] 查询到 {len(result.data)} 条关系记录")
         return result.data
     except Exception as e:
         print(f"[ERROR] Supabase 查询关系记忆失败: {e}")
