@@ -14,7 +14,7 @@ from config import settings
 from emotion.detector import detect_emotion
 from relation.extractor import extract_relations
 from relation.updater import update_or_create_relation, check_and_resolve_conflict
-from database.db import add_explicit_memory, get_all_memories, add_chat_history
+from database.db_supabase import add_explicit_memory, get_all_memories, add_chat_history
 
 
 # ============ 主接口 ============
