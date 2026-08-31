@@ -24,7 +24,7 @@ from chat.generator import generate_response
 
 # 页面配置
 st.set_page_config(
-    page_title="长程关系记忆引擎 - 情绪陪伴助手",
+    page_title="关系记忆型情绪陪伴助手",
     page_icon="🧡",
     layout="wide"
 )
