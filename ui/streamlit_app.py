@@ -24,7 +24,7 @@ from chat.generator import generate_response
 
 # 页面配置
 st.set_page_config(
-    page_title="关系记忆型情绪陪伴助手",
+    page_title="情绪倾诉对话助手",
     page_icon="🧡",
     layout="wide"
 )
@@ -302,7 +302,7 @@ with st.sidebar:
 
 # ============ 主体：对话区 ============
 st.title("💬 对话")
-st.caption("基于关系演化的情绪陪伴智能体")
+st.caption("情绪倾诉对话助手")
 
 # 显示历史消息
 for msg in st.session_state.messages:
